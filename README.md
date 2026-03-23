@@ -122,7 +122,7 @@ SD card output structure:
 ---
 
 <details>
-  <summary>Config</summary>
+  <summary>Easy configuration in one file</summary>
 
 ## Configuration
 
