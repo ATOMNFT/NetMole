@@ -121,7 +121,8 @@ SD card output structure:
 
 ---
 
-<div class="config">
+<details>
+  <summary>Config</summary>
 
 ## Configuration
 
@@ -164,7 +165,8 @@ LAST_CHANNEL              // Last channel to sweep
 MAX_PACKET_LEN            // Max bytes stored per packet
 MAX_APS                   // Max APs held in cache
 ```
-</div>
+
+</details>
 
 ---
 
