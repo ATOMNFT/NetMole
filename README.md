@@ -6,6 +6,9 @@ A Wi-Fi passive monitoring and deauth tool for the **ESP32-2432S028 (CYD)** — 
 
 ---
 
+<details>
+  <summary>A rundown of the Hardware</summary>
+  
 ## Hardware
 
 | Component | Details |
@@ -15,7 +18,12 @@ A Wi-Fi passive monitoring and deauth tool for the **ESP32-2432S028 (CYD)** — 
 | Storage | MicroSD card (SPI) |
 | SD CS Pin | GPIO 5 (configurable in `config.h`) |
 
+</details>
+
 ---
+
+<details>
+  <summary>Simple setup in Arduino IDE</summary>
 
 ## Arduino IDE Settings
 
@@ -26,7 +34,12 @@ A Wi-Fi passive monitoring and deauth tool for the **ESP32-2432S028 (CYD)** — 
 | CPU Frequency | 80MHz |
 | Core | ESP32 Arduino 2.0.10 |
 
+</details>
+
 ---
+
+<details>
+  <summary>Check out all the features</summary>
 
 ## Features
 
@@ -91,6 +104,8 @@ A Wi-Fi passive monitoring and deauth tool for the **ESP32-2432S028 (CYD)** — 
 | Blasting | Deauth burst firing |
 
 ---
+
+</details>
 
 ## File Structure
 
