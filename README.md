@@ -1,6 +1,6 @@
 ![Header](Images/mainheader.png)
 
-# NetMole v1
+# NetMole Firmware
 
 A Wi-Fi passive monitoring and deauth tool for the **ESP32-2432S028 (CYD)** — featuring an animated mole mascot, per-AP PCAP capture, EAPOL handshake logging, probe request logging, suspicious/evil-twin AP detection, and optional periodic deauth bursting.
 
