@@ -12,6 +12,7 @@ const unsigned long  SPLASH_DURATION_MS         = 3000;   // How long the splash
 const float          SPRITE_BRIGHTNESS          = 1.25f;  // Mole sprite brightness multiplier
 const unsigned long  ANIM_INTERVAL_MS           = 2000;   // Mole left/right animation speed (ms)
 const unsigned long  UI_REFRESH_MS              = 250;    // Info panel refresh rate (ms)
+const unsigned long  INFO_ROTATE_MS            = 2500;   // Top-right Session Findings rotation interval (ms)
 
 // ---- Channel sweep ----
 const unsigned long  SWEEP_HOP_MS               = 600;    // Dwell time per channel during active sweep (ms)

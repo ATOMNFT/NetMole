@@ -1,5 +1,5 @@
 /*
-  NetMole v1.0.0 — Wi-Fi Monitor & Deauth Tool
+  NetMole v1.0.1 — Wi-Fi Monitor & Deauth Tool
   Device:  ESP32-2432S028R (CYD) MicroUSB
   Display: 320x240 TFT via TFT_eSPI
 
@@ -25,8 +25,15 @@
       Left/Right    = Scanning
       Red forward   = Alert (packet logged or suspicious AP detected)
       Orange        = Deauth burst in progress
-  - Info panel shows State, AP count, Mode, SD status, and TX count
-  - Footer shows most active AP and its live packet count
+  - Info panel shows State, AP count (with sus count), Mode, SD status, and deauth TX count
+  - Number of suspicious APs found displayed under APs: count
+  - Top panel header shows Diggler’s current dwell reason live (e.g. Sweep, Dig, Rest, Treasure, Blast)
+  - Top-right INFO header rotates live Session Findings (New, Sus, Prb, Trs) at a configurable interval set in config.h
+  - Footer shows: normal AP footer | brief event callout | back to normal again
+     - SSID from the last learned AP in apCache
+     - Treasure on new AP saved and on EAPOL logged
+     - Sus when a suspicious SSID / evil-twin event is logged
+     - Probe when a probe SSID is logged
 
   States: IDLE, SCANNING, ALERT, DEAUTH
   Modes:  Crawling (sweep), Digging (sticky dwell), Blasting (deauth)
@@ -95,6 +102,12 @@ volatile uint32_t g_rxCount   = 0;
 volatile uint32_t g_mgmtCount = 0;
 volatile uint32_t g_dataCount = 0;
 uint32_t          g_deauthTx  = 0;  // Total deauth packets injected
+uint32_t          g_probeCount = 0;  // Total probe requests logged this session
+uint32_t          g_treasureCount = 0;  // Total Treasure! alerts triggered this session
+
+// Top-right session findings rotator
+unsigned long lastInfoRotateMs = 0;
+uint8_t       infoRotateIndex  = 0;
 
 // ============================================================
 // Sprite brightening buffer
@@ -164,10 +177,12 @@ struct APRecord {
   char filePath[96];      // Beacon PCAP: SSID_BSSID_beacon.pcap
   char eapolFilePath[96]; // EAPOL PCAP:  SSID_BSSID_eapol.pcap
   uint32_t packetCount;
+  bool suspicious;
 };
 
 APRecord apCache[MAX_APS];
 int apCount = 0;
+int suspiciousApCount = 0;
 
 // ============================================================
 // Pending packet staging
@@ -221,6 +236,16 @@ const char* stateToString(ScannerState s) {
     case STATE_DEAUTH:   return "DEAUTH";
     default:             return "?";
   }
+}
+
+
+
+const char* dwellReasonString() {
+  if (scannerState == STATE_DEAUTH) return "Blast";
+  if (scannerState == STATE_ALERT)  return "Treasure";
+  if (scannerState == STATE_IDLE)   return "Rest";
+  if (stickyChannelActive)          return "Dig";
+  return "Sweep";
 }
 
 uint16_t brighten565(uint16_t c, float factor) {
@@ -331,6 +356,7 @@ int createAPRecord(const uint8_t* bssid, const char* ssid, uint8_t ssidLen, uint
       apCache[i].ssidLen = ssidLen;
       apCache[i].channel = channel;
       apCache[i].fileCreated = false;
+      apCache[i].suspicious = false;
       apCache[i].filePath[0] = 0;
       apCache[i].eapolFilePath[0] = 0;
       buildAPFilePath(apCache[i].ssid, apCache[i].bssid, "beacon", apCache[i].filePath, sizeof(apCache[i].filePath));
@@ -340,6 +366,15 @@ int createAPRecord(const uint8_t* bssid, const char* ssid, uint8_t ssidLen, uint
     }
   }
   return -1;
+}
+
+void markAPSuspicious(int idx) {
+  if (idx < 0 || idx >= MAX_APS) return;
+  if (!apCache[idx].used) return;
+  if (apCache[idx].suspicious) return;
+
+  apCache[idx].suspicious = true;
+  suspiciousApCount++;
 }
 
 bool ensurePcapDir() {
@@ -509,6 +544,7 @@ void updateIdleBurrowState() {
 
 void triggerAlert() {
   if (millis() - lastAlertMs < ALERT_COOLDOWN_MS) return; // Adjust cooldown above
+  g_treasureCount++;
   scannerState = STATE_ALERT;
   currentFrame = MOLE_FORWARD_RED;
   alertStartMs = millis();
@@ -531,12 +567,8 @@ void drawLayout() {
   tft.drawFastHLine(INFO_PANEL_X + 4, INFO_PANEL_Y + 88, INFO_PANEL_W - 8, TFT_DARKGREY);
   tft.drawFastHLine(INFO_PANEL_X + 4, INFO_PANEL_Y + 132, INFO_PANEL_W - 8, TFT_DARKGREY);
 
-  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  tft.setTextSize(1);
-  tft.setCursor(MOLE_PANEL_X + 2, MOLE_PANEL_Y - 10);
-  tft.print("Diggler");
-  tft.setCursor(INFO_PANEL_X + 2, INFO_PANEL_Y - 10);
-  tft.print("INFO");
+  // Draw panel header labels
+  drawPanelHeaders();
 
   // Footer guide line for the last learned SSID readout
   tft.drawFastHLine(0, 224, SCREEN_W, TFT_DARKGREY);
@@ -562,6 +594,49 @@ void drawMole(MoleFrame frame) {
 }
 
 // ============================================================
+// Top-right session findings helper
+// ============================================================
+void buildInfoHeaderText(char* out, size_t outSize) {
+  switch (infoRotateIndex % 4) {
+    case 0:
+      snprintf(out, outSize, "New:%d", apCount);
+      break;
+    case 1:
+      snprintf(out, outSize, "Sus:%d", suspiciousApCount);
+      break;
+    case 2:
+      snprintf(out, outSize, "Prb:%lu", g_probeCount);
+      break;
+    default:
+      snprintf(out, outSize, "Trs:%lu", g_treasureCount);
+      break;
+  }
+  out[outSize - 1] = 0;
+}
+
+// ============================================================
+// Panel header labels
+// ============================================================
+void drawPanelHeaders() {
+  // Clear the small header strips above each panel so text updates cleanly.
+  tft.fillRect(MOLE_PANEL_X, MOLE_PANEL_Y - 12, MOLE_PANEL_W, 10, TFT_BLACK);
+  tft.fillRect(INFO_PANEL_X, INFO_PANEL_Y - 12, INFO_PANEL_W, 10, TFT_BLACK);
+
+  tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  tft.setTextSize(1);
+
+  tft.setCursor(MOLE_PANEL_X + 2, MOLE_PANEL_Y - 10);
+  tft.print("Diggler: ");
+  tft.print(dwellReasonString());
+
+  char infoHeader[20];
+  buildInfoHeaderText(infoHeader, sizeof(infoHeader));
+  tft.setCursor(INFO_PANEL_X + 2, INFO_PANEL_Y - 10);
+  tft.print("INFO | ");
+  tft.print(infoHeader);
+}
+
+// ============================================================
 // Header Bar
 // ============================================================
 void drawHeader() {
@@ -571,7 +646,7 @@ void drawHeader() {
   tft.setTextColor(TFT_GREEN, dirtBrown);
   tft.setTextSize(2);
   tft.setCursor(4, 4);
-  tft.print("NetMole v1");
+  tft.print("NetMole v1.01");
 
   tft.setTextColor(TFT_WHITE, dirtBrown);
   tft.setTextSize(2);
@@ -593,19 +668,25 @@ void drawStatus() {
 }
 
 void drawInfo() {
-  // AP count
-  tft.fillRect(INFO_PANEL_X + 6, INFO_PANEL_Y + 50, INFO_PANEL_W - 12, 30, TFT_BLACK);
+  // AP count + suspicious AP count
+  tft.fillRect(INFO_PANEL_X + 6, INFO_PANEL_Y + 46, INFO_PANEL_W - 12, 40, TFT_BLACK);
+
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
   tft.setTextSize(2);
-  tft.setCursor(INFO_PANEL_X + 8, INFO_PANEL_Y + 58);
+  tft.setCursor(INFO_PANEL_X + 8, INFO_PANEL_Y + 48);
   tft.printf("APs: %d", apCount);
+
+  tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+  tft.setTextSize(1);
+  tft.setCursor(INFO_PANEL_X + 8, INFO_PANEL_Y + 68);
+  tft.printf("Sus: %d", suspiciousApCount);
 
   // Mode
   tft.fillRect(INFO_PANEL_X + 6, INFO_PANEL_Y + 94, INFO_PANEL_W - 12, 30, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.setTextSize(2);
   tft.setCursor(INFO_PANEL_X + 8, INFO_PANEL_Y + 92);
-  tft.print("Mode:");
+  tft.print("Mood:");
   if (scannerState == STATE_DEAUTH) {
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.setCursor(INFO_PANEL_X + 8, INFO_PANEL_Y + 112);
@@ -648,6 +729,7 @@ void drawFooterSSID() {
 
 void fullRedraw() {
   drawLayout();
+  drawPanelHeaders();
   drawHeader();
   drawStatus();
   drawMole(currentFrame);
@@ -997,6 +1079,7 @@ void logProbeToFile(const uint8_t* mac, const char* ssid, uint8_t ssidLen, uint8
   f.printf("%s, %s, ch%d, %ddBm\n", macBuf, ssidText, channel, rssi);
   f.flush();
   f.close();
+  g_probeCount++;
 }
 
 // ============================================================
@@ -1034,11 +1117,13 @@ void processPendingPacket() {
 
     if (idx < 0) {
       // Check for evil twin BEFORE creating the record so the cache doesn't include this AP yet
+      bool flaggedSuspicious = false;
       if (SUSPICIOUS_DETECTION_ENABLED && ssidLen > 0) {
         int twinIdx = findEvilTwin(ssid, bssid);
         if (twinIdx >= 0) {
           logSuspiciousAP("(Evil-Twin)", ssid, bssid, pktChannel, pktRSSI);
           triggerAlert();
+          flaggedSuspicious = true;
         }
       }
 
@@ -1050,6 +1135,11 @@ void processPendingPacket() {
         if (SUSPICIOUS_DETECTION_ENABLED && ssidLen > 0 && isSuspiciousSSID(ssid)) {
           logSuspiciousAP("Suspicious-SSID", ssid, bssid, pktChannel, pktRSSI);
           triggerAlert();
+          flaggedSuspicious = true;
+        }
+
+        if (flaggedSuspicious) {
+          markAPSuspicious(idx);
         }
 
         bool newApLogged = false;
@@ -1227,6 +1317,13 @@ void loop() {
 
   if (now - lastUiMs >= UI_REFRESH_MS) {
     lastUiMs = now;
+
+    if (now - lastInfoRotateMs >= INFO_ROTATE_MS) {
+      lastInfoRotateMs = now;
+      infoRotateIndex = (infoRotateIndex + 1) % 4;
+    }
+
+    drawPanelHeaders();
     drawHeader();
     drawStatus();
     drawInfo();
