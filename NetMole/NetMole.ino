@@ -1,6 +1,6 @@
 /*
   NetMole v1 — Wi-Fi Monitor & Deauth Tool
-  Device:  ESP32-2432S028R (CYD)
+  Device:  ESP32-2432S028R (CYD) MicroUSB
   Display: 320x240 TFT via TFT_eSPI
 
   === Arduino IDE Settings ===
