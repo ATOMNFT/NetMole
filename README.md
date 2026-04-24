@@ -6,8 +6,6 @@ A Wi-Fi passive monitoring and deauth tool for the **ESP32-2432S028 (CYD)** — 
 
 > **For authorized use only. Only use on networks you own or have explicit permission to test.**
 
----
-
 <a href="https://atomnft.github.io/NetMole/flash0.html" target="_blank" rel="noopener noreferrer">
   <img src="Images/flash-button.png" alt="Flash Now" width="200" height="140">
 </a>
